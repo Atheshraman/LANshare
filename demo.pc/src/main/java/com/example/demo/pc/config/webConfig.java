@@ -18,8 +18,10 @@ public class webConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(rateLimitInterceptor)
-                .addPathPatterns("/Transfer-Request/**","/upload/**");
+                .addPathPatterns("/Transfer-Request/**", "/upload/**")
+                .excludePathPatterns("/upload/*/chunk/**");
     }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")

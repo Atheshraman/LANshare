@@ -59,42 +59,41 @@ public class TransferController {
     public ResponseEntity<Map<String, String>> uploadfile(
             @PathVariable String requestID,
             @RequestHeader("Authorization") String AuthHeader,
-            HttpServletRequest request)  throws Exception
-    {
-        String token=AuthHeader.replace("Bearer ","").trim();
-        if(!transferService.validateToken(requestID,token)){
-            return  ResponseEntity.status(403).body(Map.of("error","Invalid or Expired token"));
+            HttpServletRequest request) throws Exception {
+        String token = AuthHeader.replace("Bearer ", "").trim();
+        if (!transferService.validateToken(requestID, token)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Invalid or Expired token"));
         }
-        PendingTransfer pending=transferService.getPendingTransfer(requestID);
+        PendingTransfer pending = transferService.getPendingTransfer(requestID);
         Files.createDirectories(Paths.get(downloadDir));
-        Path target=Paths.get(downloadDir, pending.getFilename());
-        MessageDigest message=MessageDigest.getInstance("SHA-256");
-        try(InputStream in=request.getInputStream();
-            OutputStream fileout=new BufferedOutputStream(Files.newOutputStream(target),1<<20)
-        ){
-            byte[] buffer=new byte[1<<20];
+        Path target = Paths.get(downloadDir, pending.getFilename());
+        MessageDigest message = MessageDigest.getInstance("SHA-256");
+        try (InputStream in = request.getInputStream();
+             OutputStream fileout = new BufferedOutputStream(Files.newOutputStream(target), 1 << 20)
+        ) {
+            byte[] buffer = new byte[1 << 20];
             int bytesRead;
-            while((bytesRead=in.read(buffer))!=-1){
-                fileout.write(buffer,0,bytesRead);
-                message.update(buffer,0,bytesRead);
+            while ((bytesRead = in.read(buffer)) != -1) {
+                fileout.write(buffer, 0, bytesRead);
+                message.update(buffer, 0, bytesRead);
             }
 
         }
-        String actualchecksum= HexFormat.of().formatHex(message.digest());
+        String actualchecksum = HexFormat.of().formatHex(message.digest());
         transferService.invalidateAfterUse(requestID);
-        if(!actualchecksum.equalsIgnoreCase(pending.getChecksum())){
+        if (!actualchecksum.equalsIgnoreCase(pending.getChecksum())) {
             Files.deleteIfExists(target);
-            return ResponseEntity.status(422).body(Map.of("error","checksum mismatched, file discarded"));
+            return ResponseEntity.status(422).body(Map.of("error", "checksum mismatched, file discarded"));
         }
-       return  ResponseEntity.ok(Map.of("Status","SUCCESS","filename", pending.getFilename()));
+        return ResponseEntity.ok(Map.of("Status", "SUCCESS", "filename", pending.getFilename()));
     }
+
     @PostMapping("/upload/{requestId}/chunk/{chunkIndex}")
-    public ResponseEntity<Map<String,Object>> uploadchunk(@PathVariable String requestId,
-            @PathVariable int chunkIndex,
-            @RequestHeader("Authorization") String authHeader,
-            @RequestHeader("X-Chunk-Checksum") String expectedChunkChecksum,
-            HttpServletRequest request) throws Exception
-    {
+    public ResponseEntity<Map<String, Object>> uploadchunk(@PathVariable String requestId,
+                                                           @PathVariable int chunkIndex,
+                                                           @RequestHeader("Authorization") String authHeader,
+                                                           @RequestHeader("X-Chunk-Checksum") String expectedChunkChecksum,
+                                                           HttpServletRequest request) throws Exception {
         String token = authHeader.replace("Bearer ", "").trim();
 
         if (!transferService.validateToken(requestId, token)) {
@@ -102,13 +101,13 @@ public class TransferController {
         }
 
         PendingTransfer pending = transferService.getPendingTransfer(requestId);
-        if(pending.getChunkTransfer()==null){
+        if (pending.getChunkTransfer() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "This transfer is not chunked"));
         }
 
         byte[] chunkData;
-        try(InputStream in=request.getInputStream()){
-            chunkData=in.readAllBytes();
+        try (InputStream in = request.getInputStream()) {
+            chunkData = in.readAllBytes();
         }
         if (expectedChunkChecksum != null) {
             String actualChunkChecksum = computeChunkChecksum(chunkData);
@@ -121,28 +120,27 @@ public class TransferController {
         }
         Files.createDirectories(Paths.get(downloadDir));
         Path target = Paths.get(downloadDir, pending.getFilename());
-        if(!Files.exists(target)){
-           try(RandomAccessFile raf=new RandomAccessFile(target.toFile(),"rw")){
-               raf.setLength(pending.getFileSize());
-           }
+        if (!Files.exists(target)) {
+            try (RandomAccessFile raf = new RandomAccessFile(target.toFile(), "rw")) {
+                raf.setLength(pending.getFileSize());
+            }
         }
-        long offset=(long)chunkIndex* pending.getChunkSizeBytes();
+        long offset = (long) chunkIndex * pending.getChunkSizeBytes();
 
-        try(RandomAccessFile raf=new RandomAccessFile(target.toFile(),"rw")){
-            raf.seek(offset);
-            raf.write(chunkData);
-        }
+        java.nio.channels.FileChannel channel = pending.getOrOpenFileChannel(target);
+        channel.write(java.nio.ByteBuffer.wrap(chunkData), offset);
         pending.AddBytesReceived(chunkData.length);
         pending.getChunkTransfer().markReceived(chunkIndex);
-        boolean complete=pending.getChunkTransfer().isComplete();
-        Map<String,Object> body=Map.of(
-                "chunkIndex",chunkIndex,
-                "Received",pending.getChunkTransfer().getReceivedChunks(),
-                "totalChunks",pending.getChunkTransfer().getTotalChunks(),
-                "complete",complete
+        boolean complete = pending.getChunkTransfer().isComplete();
+        Map<String, Object> body = Map.of(
+                "chunkIndex", chunkIndex,
+                "Received", pending.getChunkTransfer().getReceivedChunks(),
+                "totalChunks", pending.getChunkTransfer().getTotalChunks(),
+                "complete", complete
         );
-        if(complete){
-            String checksum=computeFileCheckSum(target);
+        if (complete) {
+            pending.closeFileChannel();
+            String checksum = computeFileCheckSum(target);
             transferService.invalidateAfterUse(requestId);
             if (!checksum.equalsIgnoreCase(pending.getChecksum())) {
                 Files.deleteIfExists(target);
@@ -151,6 +149,7 @@ public class TransferController {
         }
         return ResponseEntity.ok(body);
     }
+
     @GetMapping("/transfer-request/{requestId}/status")
     public ResponseEntity<Map<String, Object>> getStatus(@PathVariable String requestId) {
         PendingTransfer pending = transferService.getPendingTransfer(requestId);
@@ -163,6 +162,7 @@ public class TransferController {
         }
         return ResponseEntity.ok(body);
     }
+
     @GetMapping("/transfer/{requestId}/progress")
     public ResponseEntity<Map<String, Object>> getProgress(@PathVariable String requestId) {
         PendingTransfer pending = transferService.getPendingTransfer(requestId);
@@ -180,11 +180,13 @@ public class TransferController {
                 "complete", received >= total && total > 0
         ));
     }
+
     @GetMapping("/transfer-requests/pending")
     public ResponseEntity<java.util.List<PendingTransfer>> getPendingRequests() {
         return ResponseEntity.ok(transferService.getAllPending());
     }
-    private String computeFileCheckSum(Path target) throws Exception{
+
+    private String computeFileCheckSum(Path target) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         try (InputStream in = Files.newInputStream(target)) {
             byte[] buffer = new byte[1 << 20];
@@ -195,6 +197,7 @@ public class TransferController {
         }
         return HexFormat.of().formatHex(digest.digest());
     }
+
     private String computeChunkChecksum(byte[] data) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         digest.update(data);

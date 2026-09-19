@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -21,8 +22,9 @@ public class SendController {
     public SendController(TransferClientService transferClientService) {
         this.transferClientService = transferClientService;
     }
+
     @PostMapping("/send")
-    public ResponseEntity<Map<String,String>> send(
+    public ResponseEntity<Map<String, String>> send(
             @RequestParam String peerUrl,
             @RequestParam String filename,
             HttpServletRequest request) throws Exception {
@@ -31,36 +33,38 @@ public class SendController {
                 ? Path.of(localAppData, "LANShare", "temp-outgoing")
                 : Path.of(System.getProperty("java.io.tmpdir"), "LANShare-temp-outgoing");
         Files.createDirectories(tempDir);
-        Path tempFile=tempDir.resolve(filename);
-        try(InputStream in=request.getInputStream();
-            OutputStream out=Files.newOutputStream(tempFile);
+        Path tempFile = tempDir.resolve(filename);
+        try (InputStream in = request.getInputStream();
+             OutputStream out = Files.newOutputStream(tempFile);
         ) {
             in.transferTo(out);
         }
-            String requestId;
+        String requestId;
+        try {
+            requestId = transferClientService.initiateTransfer(peerUrl, tempFile);
+        } catch (Exception e) {
             try {
-                requestId = transferClientService.initiateTransfer(peerUrl, tempFile);
-            } catch (Exception e) {
-                try { Files.deleteIfExists(tempFile); } catch (Exception cleanupEx) {
-                    log.warn("Failed to delete temporary file: {}", tempFile, cleanupEx);
-                }
-                return ResponseEntity.status(502).body(Map.of(
-                        "error", "Could not reach peer or register transfer",
-                        "detail", String.valueOf(e.getMessage())
-                ));
+                Files.deleteIfExists(tempFile);
+            } catch (Exception cleanupEx) {
+                log.warn("Failed to delete temporary file: {}", tempFile, cleanupEx);
             }
+            return ResponseEntity.status(502).body(Map.of(
+                    "error", "Could not reach peer or register transfer",
+                    "detail", String.valueOf(e.getMessage())
+            ));
+        }
 
-            final String finalRequestId = requestId;
-        Thread.ofVirtual().start(()->{
-            try{
-                transferClientService.completeTransfer(peerUrl,finalRequestId,tempFile);
+        final String finalRequestId = requestId;
+        Thread.ofVirtual().start(() -> {
+            try {
+                transferClientService.completeTransfer(peerUrl, finalRequestId, tempFile);
                 System.out.println("[Send] Completed: " + filename + " -> " + peerUrl);
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 System.err.println("[Send] Failed: " + filename + " -> " + peerUrl + " : " + e.getMessage());
-            }
-            finally {
-                try { Files.deleteIfExists(tempFile); } catch (Exception e) {
+            } finally {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (Exception e) {
                     log.warn("Failed to delete temporary file: {}", tempFile, e);
                 }
             }

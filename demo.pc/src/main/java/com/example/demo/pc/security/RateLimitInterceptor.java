@@ -17,16 +17,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class RateLimitInterceptor implements HandlerInterceptor {
 
-    private final Map<String, Bucket> buckets=new ConcurrentHashMap<>();
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
     @Value("${app.ratelimit.requests-per-minute}")
     private int requestsPerMinute;
 
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request,
                              @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
-        String clientIP=resolveClientIP(request);
-        Bucket bucket= buckets.computeIfAbsent(clientIP,ip->createNewBucket());
-        if(bucket.tryConsume(1)){
+        String clientIP = resolveClientIP(request);
+        Bucket bucket = buckets.computeIfAbsent(clientIP, ip -> createNewBucket());
+        if (bucket.tryConsume(1)) {
             return true;
         }
         response.setStatus(429);
@@ -36,7 +36,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     }
 
     private Bucket createNewBucket() {
-        Bandwidth limit=Bandwidth.builder()
+        Bandwidth limit = Bandwidth.builder()
                 .capacity(requestsPerMinute)
                 .refillGreedy(requestsPerMinute, Duration.ofMinutes(1))
                 .build();
@@ -45,8 +45,8 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private String resolveClientIP(HttpServletRequest request) {
 
-        String Forwarded=request.getHeader("X-Forwarded-For");
-        if(Forwarded!=null && !Forwarded.isBlank()){
+        String Forwarded = request.getHeader("X-Forwarded-For");
+        if (Forwarded != null && !Forwarded.isBlank()) {
             return Forwarded.split(",")[0].trim();
         }
         return request.getRemoteAddr();

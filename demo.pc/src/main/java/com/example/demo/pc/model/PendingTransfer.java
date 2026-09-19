@@ -3,6 +3,7 @@ package com.example.demo.pc.model;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 
+
 public class PendingTransfer {
     private final String requestId;
     private final String filename;
@@ -11,11 +12,12 @@ public class PendingTransfer {
     private final Instant createdAt;
     private String token;
     private Instant tokenExpiresAt;
-    private TransferStatus status=TransferStatus.PENDING;
+    private TransferStatus status = TransferStatus.PENDING;
     private ChunkTransfer chunkTransfer;
     private long chunkSizeBytes;
+    private java.nio.channels.FileChannel fileChannel;
 
-    private final AtomicLong BytesReceived=new AtomicLong(0);
+    private final AtomicLong BytesReceived = new AtomicLong(0);
 
     public PendingTransfer(String requestId, String filename, long fileSize, String checksum) {
         this.requestId = requestId;
@@ -52,32 +54,39 @@ public class PendingTransfer {
     public Instant getTokenExpiresAt() {
         return tokenExpiresAt;
     }
-    public TransferStatus getStatus(){
+
+    public TransferStatus getStatus() {
         return status;
     }
-    public void accept(String token,Instant expiresAt){
-        this.status=TransferStatus.ACCEPTED;
-        this.token=token;
-        this.tokenExpiresAt=expiresAt;
+
+    public void accept(String token, Instant expiresAt) {
+        this.status = TransferStatus.ACCEPTED;
+        this.token = token;
+        this.tokenExpiresAt = expiresAt;
     }
-    public void reject(){
-        this.status=TransferStatus.REJECTED;
+
+    public void reject() {
+        this.status = TransferStatus.REJECTED;
     }
-    public boolean isTokenValid(String suppliedToken){
-        return status==TransferStatus.ACCEPTED
-                && token!=null
-                &&token.equals(suppliedToken)
-                &&Instant.now().isBefore(tokenExpiresAt);
+
+    public boolean isTokenValid(String suppliedToken) {
+        return status == TransferStatus.ACCEPTED
+                && token != null
+                && token.equals(suppliedToken)
+                && Instant.now().isBefore(tokenExpiresAt);
     }
-    public void initChunking(long chunkSizeBytes){
-        this.chunkSizeBytes=chunkSizeBytes;
-        int totalChunks= (int)Math.ceil((double) this.fileSize/chunkSizeBytes);
-        this.chunkTransfer=new ChunkTransfer(totalChunks);
+
+    public void initChunking(long chunkSizeBytes) {
+        this.chunkSizeBytes = chunkSizeBytes;
+        int totalChunks = (int) Math.ceil((double) this.fileSize / chunkSizeBytes);
+        this.chunkTransfer = new ChunkTransfer(totalChunks);
 
     }
+
     public ChunkTransfer getChunkTransfer() {
         return chunkTransfer;
     }
+
     public long getChunkSizeBytes() {
         return chunkSizeBytes;
     }
@@ -85,7 +94,30 @@ public class PendingTransfer {
     public long getBytesReceived() {
         return BytesReceived.get();
     }
-    public void AddBytesReceived(long n){
+
+    public void AddBytesReceived(long n) {
         BytesReceived.addAndGet(n);
     }
+    public synchronized java.nio.channels.FileChannel getOrOpenFileChannel(java.nio.file.Path target) throws java.io.IOException {
+        if (fileChannel == null) {
+            fileChannel = java.nio.channels.FileChannel.open(
+                    target,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.WRITE
+            );
+        }
+        return fileChannel;
+    }
+
+    public synchronized void closeFileChannel() {
+        if (fileChannel != null) {
+            try {
+                fileChannel.close();
+            } catch (java.io.IOException e) {
+                System.err.println("Failed to close file channel for " + requestId + ": " + e.getMessage());
+            }
+            fileChannel = null;
+        }
+    }
 }
+

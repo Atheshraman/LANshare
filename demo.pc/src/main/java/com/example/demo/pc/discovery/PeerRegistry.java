@@ -10,18 +10,21 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class PeerRegistry {
 
-    private final Map<String,PeerInfo> peers=new ConcurrentHashMap<>();
+    private final Map<String, PeerInfo> peers = new ConcurrentHashMap<>();
 
-    public void addpeer(String name,PeerInfo Info){
-        peers.put(name,Info);
+    public void addpeer(String name, PeerInfo Info) {
+        peers.put(name, Info);
     }
-    public void removepeer(String name){
+
+    public void removepeer(String name) {
         peers.remove(name);
     }
-    public Collection<PeerInfo> getAllPeers(){
+
+    public Collection<PeerInfo> getAllPeers() {
         return peers.values();
     }
-    public PeerInfo getPeer(String name){
-        return  peers.get(name);
+
+    public PeerInfo getPeer(String name) {
+        return peers.get(name);
     }
 }

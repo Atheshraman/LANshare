@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class TransferService {
-    private final Map<String, PendingTransfer> pendingTransfer=new ConcurrentHashMap<>();
+    private final Map<String, PendingTransfer> pendingTransfer = new ConcurrentHashMap<>();
     @Value("${app.security.token-ttl-seconds}")
     private long tokenTtlSeconds;
 
@@ -25,28 +25,31 @@ public class TransferService {
     @Value("${app.transfer.chunk-threshold-bytes}")
     private long chunkThresholdBytes;
 
-    public String CreateTransferRequest(String filename,long filesize,String checksum){
-        String requestID= UUID.randomUUID().toString();
-        PendingTransfer pending=new PendingTransfer(requestID,filename,filesize,checksum);
-        pendingTransfer.put(requestID,pending);
+    public String CreateTransferRequest(String filename, long filesize, String checksum) {
+        String requestID = UUID.randomUUID().toString();
+        PendingTransfer pending = new PendingTransfer(requestID, filename, filesize, checksum);
+        pendingTransfer.put(requestID, pending);
         return requestID;
     }
-    public PendingTransfer getPendingTransfer(String requestID){
-        return  pendingTransfer.get(requestID);
+
+    public PendingTransfer getPendingTransfer(String requestID) {
+        return pendingTransfer.get(requestID);
     }
-    public String acceptTransfer(String requestID){
-        PendingTransfer pending=pendingTransfer.get(requestID);
-        if(pending==null){
-            throw new IllegalStateException("Unknown request ID"+requestID);
+
+    public String acceptTransfer(String requestID) {
+        PendingTransfer pending = pendingTransfer.get(requestID);
+        if (pending == null) {
+            throw new IllegalStateException("Unknown request ID" + requestID);
         }
-        String token=UUID.randomUUID().toString();
-        Instant expiresAt=Instant.now().plusSeconds(tokenTtlSeconds);
-        pending.accept(token,expiresAt);
-        if(pending.getFileSize()>chunkThresholdBytes){
+        String token = UUID.randomUUID().toString();
+        Instant expiresAt = Instant.now().plusSeconds(tokenTtlSeconds);
+        pending.accept(token, expiresAt);
+        if (pending.getFileSize() > chunkThresholdBytes) {
             pending.initChunking(chunkSizeBytes);
         }
         return token;
     }
+
     public boolean validateToken(String requestId, String token) {
         PendingTransfer pending = pendingTransfer.get(requestId);
         return pending != null && pending.isTokenValid(token);
@@ -55,27 +58,35 @@ public class TransferService {
     public void invalidateAfterUse(String requestId) {
         pendingTransfer.remove(requestId);
     }
+
     public void rejectTransfer(String requestId) {
         PendingTransfer pending = pendingTransfer.get(requestId);
         if (pending != null) {
             pending.reject();
         }
     }
-    public void purgeExpired(){
-        Instant now=Instant.now();
-        pendingTransfer.entrySet().removeIf(entry->{
-            PendingTransfer p=entry.getValue();
-            boolean expired=p.getCreatedAt().plusSeconds(pendingRequestTtlSeconds).isBefore(now);
-            boolean tokenExpired=p.getTokenExpiresAt()!=null && p.getTokenExpiresAt().isBefore(now);
-            return expired || tokenExpired;
-        }
+
+    public void purgeExpired() {
+        Instant now = Instant.now();
+        pendingTransfer.entrySet().removeIf(entry -> {
+                    PendingTransfer p = entry.getValue();
+                    boolean expired = p.getCreatedAt().plusSeconds(pendingRequestTtlSeconds).isBefore(now);
+                    boolean tokenExpired = p.getTokenExpiresAt() != null && p.getTokenExpiresAt().isBefore(now);
+                    boolean finalexpired=expired || tokenExpired;
+                    if(finalexpired){
+                        p.closeFileChannel();
+                    }
+                    return finalexpired;
+                }
         );
     }
+
     public java.util.List<PendingTransfer> getAllPending() {
         return pendingTransfer.values().stream()
                 .filter(p -> p.getStatus() == com.example.demo.pc.model.TransferStatus.PENDING)
                 .toList();
     }
+
     public int pendingCount() {
         return pendingTransfer.size();
     }

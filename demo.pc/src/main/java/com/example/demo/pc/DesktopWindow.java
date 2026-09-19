@@ -7,6 +7,7 @@ import javafx.scene.web.WebView;
 import javafx.stage.Stage;
 import netscape.javascript.JSObject;
 import org.springframework.context.ConfigurableApplicationContext;
+
 public class DesktopWindow extends javafx.application.Application {
 
     static ConfigurableApplicationContext springContext;

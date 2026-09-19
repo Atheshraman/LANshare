@@ -16,7 +16,7 @@ public class PeerController {
     }
 
     @GetMapping("/peers")
-    public Collection<PeerInfo> getAllPeers(){
+    public Collection<PeerInfo> getAllPeers() {
         return peerRegistry.getAllPeers();
     }
 }
